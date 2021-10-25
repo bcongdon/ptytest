@@ -25,7 +25,7 @@ libc = "0.2"
 mio = "0.6"
 log = "0.4"
 terminfo = "0.6.1"
-vt100 = "0.8"
+vt100 = "0.12"
 difference = "2.0.0"
 
 [target.'cfg(unix)'.dependencies]
