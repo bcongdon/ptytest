@@ -1,5 +1,7 @@
-use ptytest::{SizeInfo, PtyTest, Code};
+use std::collections::BTreeMap;
+
 use ptytest::{ascii_screen, ascii_screen_fragment, AsciiScreen, AsciiScreenFragment};
+use ptytest::{Code, PtyTest, SizeInfo};
 
 fn main() -> Result<(), ptytest::Error> {
     let mut args = std::env::args();
@@ -8,8 +10,9 @@ fn main() -> Result<(), ptytest::Error> {
 
     println!("Checking executable program {:?}", check_me);
 
-    let mut pty_test = PtyTest::new_with_args(check_me, vec![], &SizeInfo::new(30, 15));
-    let _ = pty_test.wait_for(&ascii_screen!{
+    let mut pty_test =
+        PtyTest::new_with_args(check_me, vec![], BTreeMap::new(), &SizeInfo::new(30, 15));
+    let _ = pty_test.wait_for(&ascii_screen! {
         "Hello world.", NL,
         "Please enter a command:", NL,
         "Prompt >> ",
@@ -17,7 +20,7 @@ fn main() -> Result<(), ptytest::Error> {
     })?;
 
     pty_test.write_str("bla")?;
-    let _ = pty_test.wait_for(&ascii_screen!{
+    let _ = pty_test.wait_for(&ascii_screen! {
         "Hello world.", NL,
         "Please enter a command:", NL,
         "Prompt >> bla",
@@ -26,7 +29,7 @@ fn main() -> Result<(), ptytest::Error> {
 
     pty_test.write(&Code::Left)?;
     pty_test.write(&Code::Left)?;
-    let _ = pty_test.wait_for(&ascii_screen!{
+    let _ = pty_test.wait_for(&ascii_screen! {
         "Hello world.", NL,
         "Please enter a command:", NL,
         "Prompt >> bla",
@@ -34,7 +37,7 @@ fn main() -> Result<(), ptytest::Error> {
     })?;
 
     pty_test.write_str("x")?;
-    let _ = pty_test.wait_for(&ascii_screen!{
+    let _ = pty_test.wait_for(&ascii_screen! {
         "Hello world.", NL,
         "Please enter a command:", NL,
         "Prompt >> bxla",

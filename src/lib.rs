@@ -1,22 +1,22 @@
-mod tty;
 mod commands;
+mod tty;
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::marker::PhantomData;
-use std::time::{Instant, Duration};
-use std::io::{Write, Read};
 use std::io::ErrorKind;
+use std::io::{Read, Write};
+use std::marker::PhantomData;
+use std::time::{Duration, Instant};
 
-use mio::{Poll, PollOpt, Ready, Events};
 #[cfg(not(windows))]
 use mio::unix::UnixReady;
+use mio::{Events, Poll, PollOpt, Ready};
 
-use tty::{EventedReadWrite, EventedPty, Pty};
+use tty::{EventedPty, EventedReadWrite, Pty};
 use vt100;
 
+pub use commands::{AsAnsi, Code};
 pub use term::SizeInfo;
-pub use commands::{Code, AsAnsi};
 
 pub struct PtyTest {
     pty: Pty,
@@ -53,9 +53,7 @@ impl std::fmt::Display for Error {
 
                 Some(ascii_state)
             }
-            Error::IoError(_) => {
-                None
-            }
+            Error::IoError(_) => None,
         };
 
         if let Some(ascii_state) = maybe_ascii_state {
@@ -69,10 +67,10 @@ impl std::fmt::Display for Error {
         }
 
         match self {
-            Error::TimeoutForScreenState{..} => {
+            Error::TimeoutForScreenState { .. } => {
                 writeln!(f, "  Screen timeout")?;
             }
-            Error::ProcessExited{..} => {
+            Error::ProcessExited { .. } => {
                 writeln!(f, "  Process exited")?;
             }
             Error::IoError(err) => {
@@ -141,7 +139,7 @@ impl AsciiScreen {
                     contents.push_str("\n");
                     rows += 1;
                 }
-                AsciiScreenFragment::Underscore(added_cols)  => {
+                AsciiScreenFragment::Underscore(added_cols) => {
                     cols += *added_cols;
                 }
                 AsciiScreenFragment::CursorPosition => {
@@ -150,9 +148,7 @@ impl AsciiScreen {
                     }
                     cursor_rowcol = Some((rows as u16, cols as u16));
                 }
-                AsciiScreenFragment::Nothing => {
-                    continue
-                }
+                AsciiScreenFragment::Nothing => continue,
             }
         }
 
@@ -206,7 +202,7 @@ impl std::fmt::Display for ScreenDiff {
         writeln!(f, "ScreenDiff {{")?;
 
         match &self.content_diff {
-            None => {},
+            None => {}
             Some((expected, found)) => {
                 let changeset = difference::Changeset::new(&expected, &found, "\n");
                 use difference::Difference;
@@ -217,17 +213,17 @@ impl std::fmt::Display for ScreenDiff {
                             for line in x.split("\n") {
                                 writeln!(f, "  -{}", line)?;
                             }
-                        },
+                        }
                         Difference::Add(x) => {
                             for line in x.split("\n") {
                                 writeln!(f, "  +{}", line)?;
                             }
-                        },
+                        }
                         Difference::Same(x) => {
                             for line in x.split("\n") {
                                 writeln!(f, "   {}", line)?;
                             }
-                        },
+                        }
                     }
                 }
             }
@@ -240,11 +236,21 @@ impl std::fmt::Display for ScreenDiff {
 
 #[macro_export]
 macro_rules! ascii_screen_fragment {
-    ($x:literal) => { AsciiScreenFragment::String($x) };
-    (NL) => { AsciiScreenFragment::Newline };
-    ($x:ident) => { AsciiScreenFragment::by_ident(stringify!($x)) };
-    (^) => { AsciiScreenFragment::CursorPosition };
-    (,) => { AsciiScreenFragment::Nothing };
+    ($x:literal) => {
+        AsciiScreenFragment::String($x)
+    };
+    (NL) => {
+        AsciiScreenFragment::Newline
+    };
+    ($x:ident) => {
+        AsciiScreenFragment::by_ident(stringify!($x))
+    };
+    (^) => {
+        AsciiScreenFragment::CursorPosition
+    };
+    (,) => {
+        AsciiScreenFragment::Nothing
+    };
 }
 
 impl PtyTest {
@@ -254,7 +260,8 @@ impl PtyTest {
         let poll_opts = PollOpt::edge();
         let parser = vt100::Parser::new(size.lines as u16, size.cols as u16, 0);
 
-        pty.register(&poll, &mut tokens, Ready::readable(), poll_opts).unwrap();
+        pty.register(&poll, &mut tokens, Ready::readable(), poll_opts)
+            .unwrap();
 
         Self {
             pty,
@@ -318,14 +325,20 @@ impl PtyTest {
         let writer = self.pty.writer();
         match writer.write(codes.as_bytes()) {
             Err(io) => return Err(Error::IoError(io)),
-            Ok(_n) => if _n != codes.len() { unimplemented!() },
+            Ok(_n) => {
+                if _n != codes.len() {
+                    unimplemented!()
+                }
+            }
         }
 
         Ok(())
     }
 
     pub fn write<D, T>(&mut self, code: D) -> Result<(), Error>
-        where D: AsRef<T>, T: commands::AsAnsi
+    where
+        D: AsRef<T>,
+        T: commands::AsAnsi,
     {
         let mut s = String::new();
         code.as_ref().add_to_string(&mut s);
@@ -343,10 +356,10 @@ impl PtyTest {
                 Ok(()) => {
                     self.events = Some(events);
                     return Ok(());
-                },
+                }
                 Err(diff) => {
                     if Instant::now() >= end_time {
-                        return Err(Error::TimeoutForScreenState(diff, self.ascii_state()))
+                        return Err(Error::TimeoutForScreenState(diff, self.ascii_state()));
                     }
 
                     diff
@@ -403,20 +416,32 @@ impl PtyTest {
         }
     }
 
-    pub fn new_with_args<S>(program: S, args: Vec<String>, size: &SizeInfo) -> Self
+    pub fn new_with_args<S>(
+        program: S,
+        args: Vec<String>,
+        env: BTreeMap<String, String>,
+        size: &SizeInfo,
+    ) -> Self
     where
         S: Into<Cow<'static, str>>,
     {
-        let tty = pty_new_with_args(program, args, size);
+        let tty = pty_new_with_args(program, args, env, size);
         Self::from_tty(tty, size)
     }
 }
 
-fn pty_new_with_args<S>(program: S, args: Vec<String>, size: &SizeInfo) -> tty::Pty
+fn pty_new_with_args<S>(
+    program: S,
+    args: Vec<String>,
+    env: BTreeMap<String, String>,
+    size: &SizeInfo,
+) -> tty::Pty
 where
     S: Into<Cow<'static, str>>,
 {
-    let config = config::Config::new().set_shell(config::Shell::new_with_args(program, args));
+    let config = config::Config::new()
+        .set_shell(config::Shell::new_with_args(program, args))
+        .set_env(env);
     let tty = tty::new(&config, size);
 
     tty
@@ -437,12 +462,19 @@ impl config::Config<()> {
             ..self
         }
     }
+
+    fn set_env(self, env: BTreeMap<String, String>) -> Self {
+        Self { env, ..self }
+    }
 }
 
 impl SizeInfo {
     pub fn new(cols: usize, lines: usize) -> Self {
         Self {
-            lines, cols, width: 10, height: 5,
+            lines,
+            cols,
+            width: 10,
+            height: 5,
         }
     }
 }
@@ -451,7 +483,7 @@ impl SizeInfo {
 ////////////////////////////////////////////////////////////////////////////////
 
 pub mod unused {
-    pub use crate::tty::{process_should_exit, child_pid, setup_env};
+    pub use crate::tty::{child_pid, process_should_exit, setup_env};
 }
 
 mod event {
@@ -482,8 +514,8 @@ mod term {
 }
 
 mod config {
-    use std::collections::BTreeMap;
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -497,14 +529,20 @@ mod config {
         where
             S: Into<Cow<'a, str>>,
         {
-            Shell { program: program.into(), args: Vec::new() }
+            Shell {
+                program: program.into(),
+                args: Vec::new(),
+            }
         }
 
         pub fn new_with_args<S>(program: S, args: Vec<String>) -> Shell<'a>
         where
             S: Into<Cow<'a, str>>,
         {
-            Shell { program: program.into(), args }
+            Shell {
+                program: program.into(),
+                args,
+            }
         }
     }
 
